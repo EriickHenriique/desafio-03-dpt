@@ -3,22 +3,25 @@ import pandas as pd
 
 
 def model_star_schema(df: pd.DataFrame) -> dict[str, pd.DataFrame]:
+    """Modela os dados do DataFrame em um star schema usando DuckDB e retorna um dicionário de DataFrames."""
     conn = duckdb.connect()
     conn.register("raw", df)
 
     # Dimensões
-
     dim_customer = conn.execute("""
-        SELECT DISTINCT
+        SELECT
             customer_id,
             customer_name,
             customer_segment,
-            customer_type,
             first_purchase_date,
             last_purchase_date,
             monthly_burn,
             churn_flag
         FROM raw
+        QUALIFY ROW_NUMBER() OVER (
+            PARTITION BY customer_id 
+            ORDER BY last_purchase_date DESC
+        ) = 1
     """).df()
 
     dim_product = conn.execute("""
@@ -57,20 +60,22 @@ def model_star_schema(df: pd.DataFrame) -> dict[str, pd.DataFrame]:
 
     dim_date = conn.execute("""
         SELECT DISTINCT
-            CAST(order_date AS DATE)        AS date_id,
-            YEAR(order_date)                AS year,
-            QUARTER(order_date)             AS quarter,
-            MONTH(order_date)               AS month,
-            DAY(order_date)                 AS day,
-            DAYOFWEEK(order_date)           AS day_of_week,
-            DAYNAME(order_date)             AS day_name,
-            MONTHNAME(order_date)           AS month_name
-        FROM raw
+            date_id,
+            YEAR(date_id)       AS year,
+            QUARTER(date_id)    AS quarter,
+            MONTH(date_id)      AS month,
+            DAY(date_id)        AS day,
+            DAYOFWEEK(date_id)  AS day_of_week,
+            DAYNAME(date_id)    AS day_name,
+            MONTHNAME(date_id)  AS month_name
+        FROM (
+            SELECT CAST(order_date AS DATE) AS date_id
+            FROM raw
+        )
         ORDER BY date_id
     """).df()
 
     # Fato 
-
     conn.register("dim_channel",  dim_channel)
     conn.register("dim_sales_rep", dim_sales_rep)
     conn.register("dim_region",   dim_region)
@@ -91,7 +96,8 @@ def model_star_schema(df: pd.DataFrame) -> dict[str, pd.DataFrame]:
             ROUND(r.unit_price * r.quantity * (1 - r.discount_pct), 2) AS net_amount,
             r.operating_expenses,
             r.cash_balance,
-            r.debt_balance
+            r.debt_balance,
+            r.customer_type            
         FROM raw r
         JOIN dim_channel  dc  ON r.sales_channel  = dc.sales_channel
                               AND r.payment_method = dc.payment_method

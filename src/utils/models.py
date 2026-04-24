@@ -28,7 +28,7 @@ class SalesData(BaseModel):
     cash_balance: float
     debt_balance: float
     monthly_burn: float
-    churn_flag: bool
+    churn_flag: int
 
     model_config = {"str_strip_whitespace": True}  # strip em todos os str automaticamente
 
